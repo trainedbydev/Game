@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CIRCUIT TRACE — a signal-tracing arcade game</title>
+<meta name="description" content="Trace a live signal across a circuit board, collecting charge and avoiding your own trail. Pure HTML canvas, no dependencies." />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --bg-deep: #0a0f16;
+    --bg-panel: #121a24;
+    --bg-panel-raised: #1a2431;
+    --bg-screen: #0c1015;
+    --border-slate: #263341;
+    --border-slate-light: #3a4c5c;
+    --text-primary: #e8eef4;
+    --text-muted: #6f889c;
+    --text-dim: #4a5f72;
+    --amber: #ffb000;
+    --amber-soft: rgba(255,176,0,0.18);
+    --amber-glow: rgba(255,176,0,0.35);
+    --cyan: #5fd4e8;
+    --cyan-glow: rgba(95,212,232,0.45);
+    --red-fault: #ff5c5c;
+    --green-ok: #6fdd8b;
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  *{ box-sizing: border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    background:
+      radial-gradient(ellipse 120% 80% at 50% -10%, rgba(95,212,232,0.06), transparent 60%),
+      radial-gradient(ellipse 100% 60% at 50% 110%, rgba(255,176,0,0.05), transparent 60%),
+      var(--bg-deep);
+    color: var(--text-primary);
+    font-family: var(--font-display);
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding: 28px 16px;
+  }
+
+  .device{
+    width:100%;
+    max-width: 620px;
+    background: linear-gradient(180deg, var(--bg-panel-raised), var(--bg-panel));
+    border: 1px solid var(--border-slate);
+    border-radius: 20px;
+    box-shadow:
+      0 30px 60px -20px rgba(0,0,0,0.6),
+      0 0 0 1px rgba(255,255,255,0.02) inset,
+      0 1px 0 rgba(255,255,255,0.04) inset;
+    padding: 18px;
+    position: relative;
+  }
+
+  .screw{
+    position:absolute; width:9px; height:9px; border-radius:50%;
+    background: radial-gradient(circle at 35% 30%, #4a5c6c, #10161d 70%);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.08), 0 1px 3px rgba(0,0,0,0.6) inset;
+  }
+  .screw.tl{ top:14px; left:14px; } .screw.tr{ top:14px; right:14px; }
+  .screw.bl{ bottom:14px; left:14px; } .screw.br{ bottom:14px; right:14px; }
+
+  .faceplate{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 10px 28px;
+    border-bottom: 1px solid var(--border-slate);
+    margin-bottom: 16px;
+  }
+  .brand{ display:flex; align-items:center; gap:12px; }
+  .brand-mark{
+    width:34px; height:34px; border-radius:8px;
+    background: linear-gradient(135deg, var(--bg-screen), #10161f);
+    border: 1px solid var(--border-slate-light);
+    display:flex; align-items:center; justify-content:center;
+    font-family: var(--font-mono); font-weight:600;
+    color: var(--cyan); font-size:16px;
+    box-shadow: 0 0 12px rgba(95,212,232,0.18) inset;
+  }
+  .brand-text .title{ font-weight:700; font-size: 16px; letter-spacing: 0.06em; line-height:1.1; }
+  .brand-text .subtitle{ font-size: 11px; color: var(--text-muted); letter-spacing: 0.08em; text-transform: uppercase; margin-top:2px; }
+
+  .status-cluster{ display:flex; align-items:center; gap:16px; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.05em; color: var(--text-muted); }
+  .status-item{ display:flex; flex-direction:column; align-items:flex-end; text-transform:uppercase; }
+  .status-item .num{ font-size:16px; color: var(--amber); font-weight:600; letter-spacing:0.02em; }
+
+  .board-wrap{
+    background: var(--bg-screen);
+    border: 1px solid var(--border-slate);
+    border-radius: 10px;
+    overflow:hidden;
+    position: relative;
+    margin: 0 8px;
+  }
+  .board-wrap::after{
+    content:"";
+    position:absolute; inset:0;
+    pointer-events:none;
+    background: repeating-linear-gradient(0deg, rgba(255,255,255,0.02) 0px, transparent 1px, transparent 3px);
+  }
+  canvas{ display:block; width:100%; height:auto; }
+
+  .overlay{
+    position:absolute; inset:0;
+    background: rgba(8,12,17,0.86);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:12px;
+    text-align:center;
+    padding: 20px;
+    z-index: 5;
+  }
+  .overlay.hidden{ display:none; }
+  .overlay .headline{
+    font-family: var(--font-mono);
+    font-size: 15px;
+    letter-spacing: 0.1em;
+    color: var(--amber);
+    text-transform: uppercase;
+  }
+  .overlay .sub{ font-size: 12.5px; color: var(--text-muted); font-family: var(--font-mono); max-width: 340px; line-height:1.6; }
+  .power-btn{
+    width: 58px; height: 58px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #26333f, #10161d 75%);
+    border: 1px solid var(--border-slate-light);
+    color: var(--cyan);
+    cursor: pointer;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow: 0 0 0 4px rgba(255,255,255,0.02), 0 6px 16px rgba(0,0,0,0.5);
+    transition: box-shadow .2s ease, transform .08s ease;
+  }
+  .power-btn svg{ width: 24px; height: 24px; }
+  .power-btn:hover{ box-shadow: 0 0 0 4px var(--cyan-glow), 0 6px 16px rgba(0,0,0,0.5); }
+  .power-btn:active{ transform: scale(0.96); }
+
+  .control-rail{
+    display:flex; align-items:center; justify-content:space-between;
+    flex-wrap: wrap; gap: 10px;
+    padding: 16px 20px 6px 20px;
+  }
+  .hint{ font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); letter-spacing: 0.03em; }
+  .hint kbd{
+    background: var(--bg-panel-raised); border: 1px solid var(--border-slate-light);
+    border-radius: 4px; padding: 1px 5px; font-family: var(--font-mono); color: var(--text-muted);
+  }
+  .key{
+    font-family: var(--font-display); font-weight:600; font-size: 12.5px; letter-spacing: 0.04em;
+    color: var(--text-primary);
+    background: linear-gradient(180deg, #202c3a, #161f29);
+    border: 1px solid var(--border-slate-light);
+    border-bottom: 2px solid #0c131a;
+    border-radius: 8px; padding: 8px 14px; cursor: pointer;
+    transition: transform .08s ease, box-shadow .15s ease;
+  }
+  .key:hover{ box-shadow: 0 0 0 1px rgba(255,255,255,0.03); }
+  .key:active{ transform: translateY(1px); border-bottom-width: 1px; }
+
+  .footer-note{
+    text-align:center; font-family: var(--font-mono); font-size: 10.5px;
+    color: var(--text-dim); letter-spacing: 0.05em; padding: 14px 0 4px;
+  }
+</style>
+</head>
+<body>
+
+<main class="device">
+  <span class="screw tl"></span><span class="screw tr"></span>
+  <span class="screw bl"></span><span class="screw br"></span>
+
+  <header class="faceplate">
+    <div class="brand">
+      <div class="brand-mark">◈</div>
+      <div class="brand-text">
+        <div class="title">CIRCUIT TRACE</div>
+        <div class="subtitle">Signal-tracing arcade</div>
+      </div>
+    </div>
+    <div class="status-cluster">
+      <div class="status-item"><span>Charge</span><span class="num" id="scoreLabel">0</span></div>
+      <div class="status-item"><span>Best</span><span class="num" id="bestLabel">0</span></div>
+    </div>
+  </header>
+
+  <div class="board-wrap">
+    <canvas id="board" width="480" height="480"></canvas>
+    <div class="overlay" id="overlay">
+      <button class="power-btn" id="powerBtn" title="Start">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/>
+        </svg>
+      </button>
+      <div class="headline" id="overlayHeadline">TRACE READY</div>
+      <div class="sub" id="overlaySub">Guide the signal across the board and collect charge nodes. Don't cross your own trail or hit the edge.</div>
+    </div>
+  </div>
+
+  <div class="control-rail">
+    <button class="key" id="restartBtn">Restart</button>
+    <div class="hint"><kbd>&larr;</kbd><kbd>&uarr;</kbd><kbd>&rarr;</kbd><kbd>&darr;</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to steer &middot; <kbd>P</kbd> to pause</div>
+  </div>
+
+  <div class="footer-note">RUNS LOCALLY — NO NETWORK, NO DEPENDENCIES</div>
+</main>
+
+<script>
+(function(){
+  const canvas = document.getElementById('board');
+  const ctx = canvas.getContext('2d');
+  const scoreLabel = document.getElementById('scoreLabel');
+  const bestLabel = document.getElementById('bestLabel');
+  const overlay = document.getElementById('overlay');
+  const overlayHeadline = document.getElementById('overlayHeadline');
+  const overlaySub = document.getElementById('overlaySub');
+  const powerBtn = document.getElementById('powerBtn');
+  const restartBtn = document.getElementById('restartBtn');
+
+  const GRID = 24;
+  const CELL = canvas.width / GRID;
+
+  let snake, dir, nextDir, node, score, best = 0, speedMs, timer, running, paused;
+
+  function resetState(){
+    snake = [ {x: 11, y: 12}, {x: 10, y: 12}, {x: 9, y: 12} ];
+    dir = {x: 1, y: 0};
+    nextDir = {x: 1, y: 0};
+    score = 0;
+    speedMs = 130;
+    node = placeNode();
+    scoreLabel.textContent = '0';
+    running = false;
+    paused = false;
+  }
+
+  function placeNode(){
+    let candidate;
+    do{
+      candidate = { x: Math.floor(Math.random()*GRID), y: Math.floor(Math.random()*GRID) };
+    } while(snake.some(seg => seg.x === candidate.x && seg.y === candidate.y));
+    return candidate;
+  }
+
+  function drawGridBackground(){
+    ctx.fillStyle = '#0c1015';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = 'rgba(95, 212, 232, 0.05)';
+    ctx.lineWidth = 1;
+    for(let i = 0; i <= GRID; i++){
+      ctx.beginPath();
+      ctx.moveTo(i * CELL, 0);
+      ctx.lineTo(i * CELL, canvas.height);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, i * CELL);
+      ctx.lineTo(canvas.width, i * CELL);
+      ctx.stroke();
+    }
+  }
+
+  function drawNode(){
+    const cx = node.x * CELL + CELL / 2;
+    const cy = node.y * CELL + CELL / 2;
+    const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 220);
+    ctx.beginPath();
+    ctx.arc(cx, cy, CELL * 0.28 + pulse * 2, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffb000';
+    ctx.shadowColor = 'rgba(255,176,0,0.7)';
+    ctx.shadowBlur = 12;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  function drawSnake(){
+    snake.forEach((seg, i) => {
+      const x = seg.x * CELL, y = seg.y * CELL;
+      const isHead = i === 0;
+      ctx.fillStyle = isHead ? '#8fecff' : '#5fd4e8';
+      ctx.shadowColor = 'rgba(95,212,232,0.55)';
+      ctx.shadowBlur = isHead ? 10 : 4;
+      const pad = 1.5;
+      ctx.fillRect(x + pad, y + pad, CELL - pad*2, CELL - pad*2);
+    });
+    ctx.shadowBlur = 0;
+  }
+
+  function draw(){
+    drawGridBackground();
+    drawNode();
+    drawSnake();
+  }
+
+  function step(){
+    if(paused) return;
+    dir = nextDir;
+    const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+
+    if(head.x < 0 || head.x >= GRID || head.y < 0 || head.y >= GRID || snake.some(seg => seg.x === head.x && seg.y === head.y)){
+      endRun();
+      return;
+    }
+
+    snake.unshift(head);
+
+    if(head.x === node.x && head.y === node.y){
+      score += 10;
+      scoreLabel.textContent = String(score);
+      node = placeNode();
+      speedMs = Math.max(60, speedMs - 3);
+      clearInterval(timer);
+      timer = setInterval(step, speedMs);
+    } else {
+      snake.pop();
+    }
+
+    draw();
+  }
+
+  function endRun(){
+    running = false;
+    clearInterval(timer);
+    if(score > best){ best = score; bestLabel.textContent = String(best); }
+    overlayHeadline.textContent = 'SIGNAL LOST';
+    overlaySub.textContent = 'Charge collected: ' + score + '. Press start to trace again.';
+    overlay.classList.remove('hidden');
+  }
+
+  function startRun(){
+    resetState();
+    overlay.classList.add('hidden');
+    running = true;
+    draw();
+    timer = setInterval(step, speedMs);
+  }
+
+  function togglePause(){
+    if(!running) return;
+    paused = !paused;
+    overlayHeadline.textContent = paused ? 'PAUSED' : '';
+    overlaySub.textContent = paused ? 'Press P to resume.' : '';
+    overlay.classList.toggle('hidden', !paused);
+  }
+
+  const KEY_DIRS = {
+    ArrowUp: {x:0,y:-1}, ArrowDown: {x:0,y:1}, ArrowLeft: {x:-1,y:0}, ArrowRight: {x:1,y:0},
+    w: {x:0,y:-1}, s: {x:0,y:1}, a: {x:-1,y:0}, d: {x:1,y:0},
+    W: {x:0,y:-1}, S: {x:0,y:1}, A: {x:-1,y:0}, D: {x:1,y:0}
+  };
+
+  window.addEventListener('keydown', (e) => {
+    if(e.key === 'p' || e.key === 'P'){ togglePause(); return; }
+    const proposed = KEY_DIRS[e.key];
+    if(!proposed) return;
+    e.preventDefault();
+    if(proposed.x === -dir.x && proposed.y === -dir.y) return;
+    nextDir = proposed;
+  });
+
+  powerBtn.addEventListener('click', startRun);
+  restartBtn.addEventListener('click', startRun);
+
+  resetState();
+  draw();
+})();
+</script>
+</body>
+</html>
